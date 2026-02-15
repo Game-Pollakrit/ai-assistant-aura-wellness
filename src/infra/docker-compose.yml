@@ -15,10 +15,9 @@ services:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U knowledge_user -d knowledge_db"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -27,10 +26,9 @@ services:
       - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 5s
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -41,11 +39,11 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:6333/health || exit 1"]
+      test: ["CMD-SHELL", "timeout 1 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/6333' || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 10s
 
   backend:
     build:
@@ -54,7 +52,7 @@ services:
     container_name: knowledge-backend
     environment:
       DATABASE_URL: postgresql://knowledge_user:knowledge_pass@postgres:5432/knowledge_db
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379
       QDRANT_URL: http://qdrant:6333
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     ports:
@@ -71,7 +69,6 @@ services:
       - ../../sample_documents:/app/sample_documents
       - ../../docs:/app/docs
       - ../../test_api.sh:/app/test_api.sh
-    restart: always
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
