@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: knowledge-postgres
+    environment:
+      POSTGRES_DB: knowledge_db
+      POSTGRES_USER: knowledge_user
+      POSTGRES_PASSWORD: knowledge_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knowledge_user -d knowledge_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: knowledge-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: knowledge-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:6333/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: knowledge-backend
+    environment:
+      DATABASE_URL: postgresql://knowledge_user:knowledge_pass@postgres:5432/knowledge_db
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    volumes:
+      - ../backend:/app
+      - ../../sample_documents:/app/sample_documents
+      - ../../docs:/app/docs
+      - ../../test_api.sh:/app/test_api.sh
+    restart: always
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+  qdrant_data:
